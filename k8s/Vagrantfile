@@ -1,0 +1,46 @@
+BOX_IMAGE = "bento/ubuntu-22.04"
+BOX_VERSION = "202401.31.0"
+
+N = 2
+
+kubernetes_ver = "1.30.1-1.1"
+containerd_ver = "1.6.28-1"
+metallb_ver = "0.14.5"
+controller_ip = "192.168.1.10"
+
+Vagrant.configure("2") do |config|
+    config.vm.define "k8s-master" do |cfg|
+        cfg.vm.box = BOX_IMAGE
+        cfg.vm.box_version = BOX_VERSION
+        cfg.vm.provider "vmware_desktop" do |v|
+            v.cpus = 2
+            v.memory = 2048
+            v.linked_clone = false
+        end
+        cfg.vm.hostname = "k8s-master"
+        cfg.vm.network "private_network", ip: controller_ip
+        cfg.vm.network "forwarded_port", guest: 22, host: 60010, auto_correct: true, id: "ssh"
+        cfg.vm.provision "shell", path: "k8s_env_build.sh", args: [ N, kubernetes_ver[0..3], controller_ip ]
+        cfg.vm.provision "shell", path: "k8s_pkg_install.sh", args: [ kubernetes_ver, containerd_ver, controller_ip ]
+        cfg.vm.provision "shell", path: "k8s_controlplane_node.sh", args: controller_ip
+        cfg.vm.provision "shell", path: "k8s_extra_pkg_install.sh", args: [ metallb_ver, controller_ip[0..8] ]
+    end
+
+    (1..N).each do |i|
+        config.vm.define "k8s-worker#{i}" do |cfg|
+            cfg.vm.box = BOX_IMAGE
+            cfg.vm.box_version = BOX_VERSION
+            cfg.vm.provider "vmware_desktop" do |v|
+                v.cpus = 2
+                v.memory = 2048
+                v.linked_clone = false
+            end
+            cfg.vm.hostname = "k8s-worker#{i}"
+            cfg.vm.network "private_network", ip: controller_ip+"#{i}"
+            cfg.vm.network "forwarded_port", guest: 22, host: "6010#{i}", auto_correct: true, id: "ssh"
+            cfg.vm.provision "shell", path: "k8s_env_build.sh", args: [ N, kubernetes_ver[0..3], controller_ip ]
+            cfg.vm.provision "shell", path: "k8s_pkg_install.sh", args: [ kubernetes_ver, containerd_ver, controller_ip+"#{i}" ]
+            cfg.vm.provision "shell", path: "k8s_worker_nodes.sh", args: controller_ip
+        end
+    end
+end
